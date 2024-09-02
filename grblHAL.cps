@@ -13,6 +13,9 @@
 /*
 Add change notes here!!!! DO NOT FORGET OR YOU WILL FORGET
 
+02.09.2024
+1. Fixed SpindleDelay property call to not use the default value.
+
 12.01.2024
 1. Added initial retract to clearance height for SafePosition:Clearance height method.
 
@@ -851,7 +854,9 @@ function onSection() {
     writeBlock(
       sOutput.format(spindleSpeed), mFormat.format(tool.clockwise ? 3 : 4)
     );
-    writeBlock("G4 P"+properties.spindleDelay.value); //add 2s dwell
+    if (getProperty("spindleDelay") > 0) {  // Add dwell time if SpindleDelay is not 0
+      writeBlock("G4 P"+getProperty("spindleDelay")); 
+    }
   }
 
   // wcs
