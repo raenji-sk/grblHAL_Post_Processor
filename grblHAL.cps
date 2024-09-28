@@ -13,6 +13,10 @@
 /*
 Add change notes here!!!! DO NOT FORGET OR YOU WILL FORGET
 
+25.09.2024
+1. Added optional after job return position
+2. enabled all circular planes by default
+
 02.09.2024
 1. Fixed SpindleDelay property call to not use the default value.
 
@@ -55,7 +59,7 @@ maximumCircularRadius = spatial(1000, MM);
 minimumCircularSweep = toRad(0.01);
 maximumCircularSweep = toRad(180);
 allowHelicalMoves = true;
-allowedCircularPlanes = (1 << PLANE_XY) | (0 << PLANE_ZX) | (0 << PLANE_YZ); // allow any circular motion
+allowedCircularPlanes = undefined; // (1 << PLANE_XY) | (1 << PLANE_ZX) | (1 << PLANE_YZ) - allow any circular motion
 
 // user-defined properties
 properties = {
@@ -86,6 +90,21 @@ properties = {
       {title: "Clearance Height", id: "clearanceHeight"}
     ],
     value: "G28",
+    scope: "post"
+  },
+  returnPosition: {
+    title: "Return Position",
+    description: "Select your Position the Machine returns to after a job is finished.",
+    group: "Safety",
+    type: "enum",
+    values: [
+      {title: "Disabled", id: "none"},
+      {title: "G28 Z0", id: "G28Z"},
+      {title: "G28 Z0, then X0Y0", id: "G28XYZ"},
+      {title: "G30 Z0", id: "G30Z"},
+      {title: "G30 Z0, then X0Y0", id: "G30XYZ"},
+    ],
+    value: "none",
     scope: "post"
   },
   showSequenceNumbers: {
@@ -1541,14 +1560,32 @@ function getCoolantCodes(coolant) {
 }
 
 function onClose() {
-  setCoolant(COOLANT_OFF);
-
   writeRetract(Z);
-
   writeRetract(X, Y);
-
+  setCoolant(COOLANT_OFF);
   onImpliedCommand(COMMAND_END);
   onCommand(COMMAND_STOP_SPINDLE);
+
+  switch (getProperty("returnPosition")) {
+    case "G28Z":
+      writeBlock(gFormat.format(28), gAbsIncModal.format(91), "Z0");
+      writeBlock(gAbsIncModal.format(90));
+      break;
+    case "G28XYZ":
+      writeBlock(gFormat.format(28), gAbsIncModal.format(91), "Z0");
+      writeBlock(gFormat.format(28), gAbsIncModal.format(91), "X0 Y0");
+      writeBlock(gAbsIncModal.format(90));
+      break;
+    case "G30Z":
+      writeBlock(gFormat.format(30), gAbsIncModal.format(91), "Z0");
+      writeBlock(gAbsIncModal.format(90));
+      break;
+    case "G30XYZ":
+      writeBlock(gFormat.format(30), gAbsIncModal.format(91), "Z0");
+      writeBlock(gFormat.format(30), gAbsIncModal.format(91), "X0 Y0");
+      writeBlock(gAbsIncModal.format(90));
+      break;
+  }
   writeBlock(mFormat.format(30)); // stop program, spindle stop, coolant off
   if (isRedirecting()) {
     closeRedirection();
