@@ -3,6 +3,10 @@ Experimental grblHAL post processor with canned cycles and 4th axis support for 
 
 Added features and modifications:
 
+30.09.24
+1. Added sanitycheck for Air while Misting
+2. Improved SpindleDelay code
+
 25.09.2024
 1. Added optional after job return position
 2. enabled all circular planes by default
