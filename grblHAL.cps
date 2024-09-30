@@ -13,28 +13,18 @@
 /*
 Add change notes here!!!! DO NOT FORGET OR YOU WILL FORGET
 
+30.09.24
+1. Added sanitycheck for Air while misting
+2. Improved SpindleDelay code
+
 25.09.2024
 1. Added optional after job return position
-2. enabled all circular planes by default
 
 02.09.2024
 1. Fixed SpindleDelay property call to not use the default value.
 
 12.01.2024
 1. Added initial retract to clearance height for SafePosition:Clearance height method.
-
-23.06.2023
-1. Added option to change Airblast behaviour while mistcooling
-2. Added Flood&Mist Cooling Support
-
-01.06.2023
-1. Added toolchange message support
-2. Updated grblHAL repositroy reference link
-
-11.09.2022
-1. Fork of Mainbranch (last update 14.05.21) created
-2. Cleaned up user PP properties
-3. Added flexible coolant mapping to the properties
 */
 
 description = "GrblHAL";
@@ -339,7 +329,7 @@ var abcFormat = createFormat({decimals:3, forceDecimal:true, scale:DEG});
 var feedFormat = createFormat({decimals:(unit == MM ? 1 : 2)});
 var toolFormat = createFormat({decimals:0});
 var rpmFormat = createFormat({decimals:0});
-var secFormat = createFormat({decimals:3, forceDecimal:true}); // seconds - range 0.001-1000
+var secFormat = createFormat({decimals:3, forceDecimal:false}); // seconds - range 0.001-1000
 var taperFormat = createFormat({decimals:1, scale:DEG});
 
 var xOutput = createVariable({prefix:"X"}, xyzFormat);
@@ -428,6 +418,10 @@ function onOpen() {
     optimizeMachineAngles2(1); // map tip mode
   }
 
+  if (getProperty("AirWhileMist") && getProperty("airOn") == "") {
+    error(localize("Cant use 'Airblast while Misting' if no Airblast is configured."));
+    return;
+  }
 
   if (!machineConfiguration.isMachineCoordinate(0)) {
     aOutput.disable();
@@ -874,7 +868,7 @@ function onSection() {
       sOutput.format(spindleSpeed), mFormat.format(tool.clockwise ? 3 : 4)
     );
     if (getProperty("spindleDelay") > 0) {  // Add dwell time if SpindleDelay is not 0
-      writeBlock("G4 P"+getProperty("spindleDelay")); 
+      onDwell(getProperty("spindleDelay")); 
     }
   }
 
