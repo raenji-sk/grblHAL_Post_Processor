@@ -13,18 +13,24 @@
 /*
 Add change notes here!!!! DO NOT FORGET OR YOU WILL FORGET
 
-11.09.2022
-1. Fork of Mainbranch (last update 14.05.21) created
+30.09.24
+1. Added sanitycheck for Air while misting
+2. Improved SpindleDelay code
 
-2. Cleaned up user PP properties
+25.09.2024
+1. Added optional after job return position
 
-3. Added flexible coolant mapping to the properties
+02.09.2024
+1. Fixed SpindleDelay property call to not use the default value.
+
+12.01.2024
+1. Added initial retract to clearance height for SafePosition:Clearance height method.
 */
 
 description = "GrblHAL";
 vendor = "GrblHAL";
-vendorUrl = "https://github.com/terjeio/grblHAL";
-longDescription = "GrblHAL PP with added features";
+vendorUrl = "https://github.com/grblHAL";
+longDescription = "GrblHAL PostProcessor with added features";
 
 // >>>>> INCLUDED FROM ../common/grbl.cps
 legal = "Copyright (C) 2012-2021 by Autodesk, Inc.";
@@ -43,7 +49,7 @@ maximumCircularRadius = spatial(1000, MM);
 minimumCircularSweep = toRad(0.01);
 maximumCircularSweep = toRad(180);
 allowHelicalMoves = true;
-allowedCircularPlanes = (1 << PLANE_XY) | (0 << PLANE_ZX) | (0 << PLANE_YZ); // allow any circular motion
+allowedCircularPlanes = undefined; // (1 << PLANE_XY) | (1 << PLANE_ZX) | (1 << PLANE_YZ) - allow any circular motion
 
 // user-defined properties
 properties = {
@@ -74,6 +80,21 @@ properties = {
       {title: "Clearance Height", id: "clearanceHeight"}
     ],
     value: "G28",
+    scope: "post"
+  },
+  returnPosition: {
+    title: "Return Position",
+    description: "Select your Position the Machine returns to after a job is finished.",
+    group: "Safety",
+    type: "enum",
+    values: [
+      {title: "Disabled", id: "none"},
+      {title: "G28 Z0", id: "G28Z"},
+      {title: "G28 Z0, then X0Y0", id: "G28XYZ"},
+      {title: "G30 Z0", id: "G30Z"},
+      {title: "G30 Z0, then X0Y0", id: "G30XYZ"},
+    ],
+    value: "none",
     scope: "post"
   },
   showSequenceNumbers: {
@@ -110,14 +131,21 @@ properties = {
   },
   useToolChanger: {
     title: "Output tool number",
-    description: "Disable to disallow the output of tool numbers (Txx).",
+    description: "Outputs Toolnumber code for tool changes when enabled. (Txx).",
     type: "boolean",
     value: true,
     scope: "post"
   },
   useM06: {
     title: "Output M6",
-    description: "Disable to disallow the output of M6 on tool changes.",
+    description: "Outputs M6 code for tool changes when enabled.",
+    type: "boolean",
+    value: true,
+    scope: "post"
+  },
+  useToolMSG: {
+    title: "Output Tool Message",
+    description: "Enable output of tool info message on tool changes.",
     type: "boolean",
     value: false,
     scope: "post"
@@ -233,6 +261,14 @@ properties = {
     value: "9",
     scope: "post"
   },
+  AirWhileMist: {
+    title: "Airblast while Misting.",
+    description: "To turn on the Airblast supply while Mistcooling is Enabled",
+    group: "Coolant",
+    type: "boolean",
+    value: true,
+    scope: "post"
+  },
 };
 
 groupDefinitions = {
@@ -261,7 +297,7 @@ var coolants = [
     get off() {if (getProperty("CoolOff") == 9) { return 9} else if (getProperty("CoolOff") == 65) {return number(65) } else {return [9, 65]}}
   },
   {id: COOLANT_MIST,
-    get on() {return [Number(getProperty("airOn")), Number(getProperty("mistOn"))]},
+    get on() {if (getProperty("AirWhileMist") == true) {return [Number(getProperty("airOn")), Number(getProperty("mistOn"))]} else {return Number(getProperty("mistOn"))}},
     get off() {if (getProperty("CoolOff") == 9) { return 9} else if (getProperty("CoolOff") == 65) {return number(65) } else {return [9, 65]}}
   },
   {id: COOLANT_THROUGH_TOOL},
@@ -274,7 +310,10 @@ var coolants = [
     get on() {return Number(getProperty("VacOn"))},
     get off() {if (getProperty("CoolOff") == 9) { return 9} else if (getProperty("CoolOff") == 65) {return number(65) } else {return [9, 65]}}
   },
-  {id: COOLANT_FLOOD_MIST},
+  {id: COOLANT_FLOOD_MIST,
+    get on() {return [Number(getProperty("floodOn")), Number(getProperty("mistOn"))]},
+    get off() {if (getProperty("CoolOff") == 9) { return 9} else if (getProperty("CoolOff") == 65) {return number(65) } else {return [9, 65]}}
+  },
   {id: COOLANT_FLOOD_THROUGH_TOOL},
   {id: COOLANT_OFF,
     get off() {if (getProperty("CoolOff") == 9) { return 9} else if (getProperty("CoolOff") == 65) {return number(65) } else {return [9, 65]}}
@@ -290,7 +329,7 @@ var abcFormat = createFormat({decimals:3, forceDecimal:true, scale:DEG});
 var feedFormat = createFormat({decimals:(unit == MM ? 1 : 2)});
 var toolFormat = createFormat({decimals:0});
 var rpmFormat = createFormat({decimals:0});
-var secFormat = createFormat({decimals:3, forceDecimal:true}); // seconds - range 0.001-1000
+var secFormat = createFormat({decimals:3, forceDecimal:false}); // seconds - range 0.001-1000
 var taperFormat = createFormat({decimals:1, scale:DEG});
 
 var xOutput = createVariable({prefix:"X"}, xyzFormat);
@@ -379,6 +418,10 @@ function onOpen() {
     optimizeMachineAngles2(1); // map tip mode
   }
 
+  if (getProperty("AirWhileMist") && getProperty("airOn") == "") {
+    error(localize("Cant use 'Airblast while Misting' if no Airblast is configured."));
+    return;
+  }
 
   if (!machineConfiguration.isMachineCoordinate(0)) {
     aOutput.disable();
@@ -777,7 +820,13 @@ function onSection() {
     }
 
     if (getProperty("useToolChanger")) {
-      writeBlock("T" + toolFormat.format(tool.number), conditional(getProperty("useM06"), mFormat.format(6)));
+      writeBlock("T" + toolFormat.format(tool.number), 
+        conditional(getProperty("useM06"), mFormat.format(6)), 
+        conditional(getProperty("useToolMSG"), formatComment(
+          "MSG,T" + xyzFormat.format(tool.number) + 
+          " " + xyzFormat.format(tool.diameter) + conditional(unit==MM,"mm") + conditional(unit==IN,"in") +
+          " " + xyzFormat.format(tool.numberOfFlutes) + 
+          "flute " + getToolTypeName(tool.type))));
       if (!isFirstSection() && !getProperty("useM06")) {
         writeComment(localize("CHANGE TO T") + tool.number);
       }
@@ -818,7 +867,9 @@ function onSection() {
     writeBlock(
       sOutput.format(spindleSpeed), mFormat.format(tool.clockwise ? 3 : 4)
     );
-    writeBlock("G4 P"+properties.spindleDelay.value); //add 2s dwell
+    if (getProperty("spindleDelay") > 0) {  // Add dwell time if SpindleDelay is not 0
+      onDwell(getProperty("spindleDelay")); 
+    }
   }
 
   // wcs
@@ -1350,6 +1401,8 @@ function writeRetract() {
     if (!is3D()) {
       error(localize("Retract option 'Clearance Height' is not supported for multi-axis machining."));
     }
+    var initialPosition = getFramePosition(currentSection.getInitialPosition());
+    writeBlock(gMotionModal.format(0), zOutput.format(initialPosition.z));
     return;
   }
   validate(arguments.length != 0, "No axis specified for writeRetract().");
@@ -1501,14 +1554,32 @@ function getCoolantCodes(coolant) {
 }
 
 function onClose() {
-  setCoolant(COOLANT_OFF);
-
   writeRetract(Z);
-
   writeRetract(X, Y);
-
+  setCoolant(COOLANT_OFF);
   onImpliedCommand(COMMAND_END);
   onCommand(COMMAND_STOP_SPINDLE);
+
+  switch (getProperty("returnPosition")) {
+    case "G28Z":
+      writeBlock(gFormat.format(28), gAbsIncModal.format(91), "Z0");
+      writeBlock(gAbsIncModal.format(90));
+      break;
+    case "G28XYZ":
+      writeBlock(gFormat.format(28), gAbsIncModal.format(91), "Z0");
+      writeBlock(gFormat.format(28), gAbsIncModal.format(91), "X0 Y0");
+      writeBlock(gAbsIncModal.format(90));
+      break;
+    case "G30Z":
+      writeBlock(gFormat.format(30), gAbsIncModal.format(91), "Z0");
+      writeBlock(gAbsIncModal.format(90));
+      break;
+    case "G30XYZ":
+      writeBlock(gFormat.format(30), gAbsIncModal.format(91), "Z0");
+      writeBlock(gFormat.format(30), gAbsIncModal.format(91), "X0 Y0");
+      writeBlock(gAbsIncModal.format(90));
+      break;
+  }
   writeBlock(mFormat.format(30)); // stop program, spindle stop, coolant off
   if (isRedirecting()) {
     closeRedirection();
