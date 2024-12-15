@@ -84,15 +84,15 @@ properties = {
   },
   returnPosition: {
     title: "Return Position",
-    description: "Select your Position the Machine returns to after a job is finished.",
+    description: "Select the desired position the machine returns to after a job is finished.",
     group: "Safety",
     type: "enum",
     values: [
       {title: "Disabled", id: "none"},
       {title: "G28 Z0", id: "G28Z"},
-      {title: "G28 Z0, then X0Y0", id: "G28XYZ"},
+      {title: "G28 Z0 then X0Y0", id: "G28XYZ"},
       {title: "G30 Z0", id: "G30Z"},
-      {title: "G30 Z0, then X0Y0", id: "G30XYZ"},
+      {title: "G30 Z0 then X0Y0", id: "G30XYZ"}
     ],
     value: "none",
     scope: "post"
